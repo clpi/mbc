@@ -1,6 +1,34 @@
-use std::collections::HashSet;
+pub mod client;
+pub mod data;
+pub mod store;
+pub mod server;
 
-use libp2p::Swarm;
+ pub use self::{
+    client::Client,
+    data::*,
+    store::Store,
+    server::Server,
+ };
+
+use std::{
+    net::{Ipv4Addr, Ipv6Addr},
+    error::Error as SE,
+    collections::HashSet
+};
+
+use libp2p::{
+    mdns::{self,}, noise, tcp, yamux,
+    core::{Multiaddr, multiaddr::Protocol},
+    identify,
+    identity,
+    relay,
+    ping,
+    kad::{
+        self, Mode,
+        store::MemoryStore,
+    },
+    swarm::{self, NetworkBehaviour, SwarmEvent},
+};
 
 use super::AppBehavior;
 
@@ -28,4 +56,3 @@ pub fn hadle_create_block(cmd: &str) {
         // let latest_b = 
     }
 }
-
