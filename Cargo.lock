@@ -200,6 +200,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "asn1_der"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "155a5a185e42c6b77ac7b88a15143d930a9e9727a5b7b77eed417404ab15c247"
+
+[[package]]
 name = "async-io"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1417,6 +1423,7 @@ dependencies = [
  "libp2p-swarm",
  "libp2p-tcp",
  "libp2p-tls",
+ "libp2p-uds",
  "libp2p-upnp",
  "libp2p-websocket",
  "libp2p-yamux",
@@ -1622,12 +1629,14 @@ version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "999ec70441b2fb35355076726a6bc466c932e9bdc66f6a11c6c0aa17c7ab9be0"
 dependencies = [
+ "asn1_der",
  "bs58",
  "ed25519-dalek",
  "hkdf",
  "multihash",
  "quick-protobuf",
  "rand 0.8.5",
+ "ring 0.17.7",
  "serde",
  "sha2",
  "thiserror",
@@ -1946,6 +1955,17 @@ dependencies = [
  "thiserror",
  "x509-parser",
  "yasna",
+]
+
+[[package]]
+name = "libp2p-uds"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee6531e4844f618678c70ce52fe5cc6971442edc343fc5c774333a28f039d83f"
+dependencies = [
+ "futures",
+ "libp2p-core",
+ "tracing",
 ]
 
 [[package]]

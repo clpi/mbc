@@ -45,5 +45,5 @@ pub async fn init() -> anyhow::Result<()> {
             tracing::info!("No subcommand");
         }
     }
-    models::p2p::run().await
+    models::p2p::server::run().await
 }

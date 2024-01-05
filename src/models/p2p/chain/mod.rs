@@ -1,10 +1,10 @@
 pub mod block;
+pub mod req;
+pub mod resp;
+pub mod event;
 
 use std::{
     collections::{hash_map::{self, DefaultHasher}, HashMap, HashSet},
-    error::Error as SError,
-    path::PathBuf,
-    io::{Write},
     hash::{Hash, Hasher},
     time::{Duration, Instant}
 };
@@ -42,6 +42,7 @@ use tokio::{
 use tracing::{Level, level_filters::LevelFilter, instrument::WithSubscriber, Subscriber};
 use tracing_subscriber::{EnvFilter, fmt::SubscriberBuilder};
 
+use self::{resp::ChainResponse, req::LocalChainReq};
 pub use self::{
     block::*
 };
@@ -58,7 +59,6 @@ use libp2p::{
             ConnectionEstablished,
         }, 
     },
-    mdns::{Behaviour},
     floodsub::{Floodsub, FloodsubEvent, Topic},
     StreamProtocol, 
 };
@@ -68,27 +68,9 @@ pub static PEER_ID: Lazy<PeerId> = Lazy::new(|| PeerId::from(KEYS.public()));
 pub static CHAIN_TOPIC: Lazy<Topic> = Lazy::new(|| Topic::new("chains"));
 pub static BLOCK_TOPIC: Lazy<Topic> = Lazy::new(|| Topic::new("blocks"));
 
-#[derive(Serialize, Debug, Deserialize, PartialEq, Eq, Clone)]
-pub struct ChainResponse {
-    pub blocks: Vec<Block>,
-    pub recv: String,
-}
-
-
-#[derive(Serialize, Debug, Deserialize, PartialEq, Eq, Clone)]
-pub struct LocalChainReq {
-    pub from_peer_id: String,
-}
-
-#[derive(Debug)]
-pub enum EventType {
-    LocalChainResponse(ChainResponse),
-    Input(String),
-    Init,
-}
 
 #[derive(NetworkBehaviour)]
-pub struct ChainBehaviour {
+pub struct Behaviour {
     // relay_client: libp2p::relay::client::Behaviour,
     pub kad: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
     pub ping: libp2p::ping::Behaviour,
@@ -103,10 +85,10 @@ pub struct ChainBehaviour {
     // pub init_sender: mpsc::UnboundedSender<bool>,
     // #[behaviour(ignore)]
     // pub chain: Chain,
-    req_resp: request_response::cbor::Behaviour<LocalChainReq, ChainResponse>,
+    pub req_resp: request_response::cbor::Behaviour<LocalChainReq, ChainResponse>,
 }
 
-impl ChainBehaviour {
+impl Behaviour {
     fn gs() -> libp2p::gossipsub::Behaviour {
         let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
@@ -174,9 +156,9 @@ impl ChainBehaviour {
     }
 
 }
-impl Default for ChainBehaviour {
+impl Default for Behaviour {
     fn default() -> Self {
-        ChainBehaviour {
+        Behaviour {
             gs: Self::gs(),
             fs: Self::fs(),
             kad: Self::kad(),
