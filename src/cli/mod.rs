@@ -1,34 +1,49 @@
+pub mod cmd;
+
+use self::{
+    cmd::Subcmd,
+};
+
 use std::str::FromStr;
 
 use clap::Parser;
 use libp2p::{Multiaddr, PeerId};
 
 #[derive(Debug, Parser)]
-#[clap(name = "libp2p dcutr")]
+#[clap(name = "mbc")]
 pub struct Opts {
     /// The mode (client-listen, client-dial)
     #[clap(long)]
-    mode: Mode,
+    pub mode: Option<Mode>,
 
     /// Fixed val to gen deterministic peer id
     #[clap(long)]
-    key_seed: u8,
+    pub key_seed: Option<u8>,
 
     /// Listening addr
     #[clap(long)]
-    relay_addr: Multiaddr,
+    pub relay_addr: Option<Multiaddr>,
 
     /// Peer ID of the remote peer to hole punch to
     #[clap(long)]
-    remote_peer_id: Option<PeerId>,
+    pub remote_peer_id: Option<PeerId>,
 
+    /// Have relay listen on ipv6 or ipv4 (default) loopback address
+    #[clap(long)]
+    pub use_ipv6: Option<bool>,
+
+    /// Port to listen on all interfaces
+    #[clap(long)]
+    pub port: Option<u16>,
+
+    /// Subcommand
     #[clap(subcommand)]
-    arg: CliArgument,
+    pub command: Option<Subcommand>,
 }
 
 #[derive(Parser,Debug)]
-pub enum CliArgument {
-    GetPeers {
+pub enum Subcommand {
+    Peers {
         #[clap(long)]
         peer_id: Option<PeerId>,
     },

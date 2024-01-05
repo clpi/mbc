@@ -1,5 +1,5 @@
 #![allow()]
-use libp2p::swarm::NetworkBehaviour;
+use libp2p::{swarm::{NetworkBehaviour, ToSwarm, ConnectionHandler, handler::ProtocolSupport}, StreamProtocol};
 use ring::digest::{Context, Digest, SHA256};
 use chrono::Utc;
 use log::info;
@@ -12,15 +12,17 @@ use std::{
     hash::{Hash, Hasher},
     convert::{TryFrom}, str::Bytes,
 };
+
+use super::{LocalChainReq, ChainResponse};
 const DIFFICULTY_PREFIX: &str = "00";
 
-// #[derive(NetworkBehaviour)]
 pub struct Chain {
     pub blocks: Vec<Block>,
     pub difficulty: u32,
 }
 
-#[derive(Hash, Serialize, Deserialize, Debug, Clone)]
+
+#[derive(Hash, Serialize, PartialEq, Eq, Deserialize, Debug, Clone)]
 pub struct Transaction {
 
 }
@@ -30,7 +32,7 @@ impl ToString for Transaction {
     }
 }
 
-#[derive(Hash, Serialize, Deserialize, Debug, Clone)]
+#[derive(Hash, Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Block {
     pub id: u64,
     pub timestamp: i64,
