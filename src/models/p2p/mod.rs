@@ -8,36 +8,14 @@ pub mod chain;
 use std::{
     collections::{hash_map::{self, DefaultHasher}, HashMap, HashSet},
     error::Error as SError,
-    path::PathBuf,
-    io::{Write},
-    hash::{Hash, Hasher},
     time::{Duration, Instant}
 };
-use clap::{Arg, Parser};
 use futures::{prelude::*, channel::oneshot};
-use anyhow::{Result as AResult, bail};
-use futures::{executor::block_on, FutureExt};
 use libp2p::{
-    StreamProtocol,
-    bytes::{BufMut, Buf,},
-    identify,
-    identity::{self, Keypair as KeyP, ed25519::Keypair},
+    gossipsub, floodsub,
     core::{upgrade::{self, Version}},
-    kad::{self},
-    noise, yamux, 
-    futures::StreamExt,
-    gossipsub::{self, Event as GSEvent, Topic as GSTopic, },
-    floodsub::{self, Topic as FSTopic},
-    multiaddr::Protocol,
-    request_response::{
-        self, OutboundRequestId, ProtocolSupport, ResponseChannel,
-    },
-    // noise::{Keypair, NoiseConfig, X25519Spec},
-    tcp::{
-        self, Config,
-        tokio::{Tcp, TcpStream},
-    },
-    swarm::{SwarmEvent, NetworkBehaviour, Swarm}, floodsub::Floodsub, PeerId, Multiaddr, Transport,
+    tcp, swarm::Swarm, noise, yamux,
+    Transport,
 };
 use tokio::{
     sync::mpsc,
@@ -87,7 +65,7 @@ pub fn hadle_create_block(cmd: &str) {
 }
 
 pub async fn init_swarm() -> Result<Swarm<chain::Behaviour>, Box<dyn SError>> {
-    let auth_keys = KeyP::generate_ed25519();
+    let auth_keys = gen_ed25519(0);
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(auth_keys.clone())
         .with_tokio()
         .with_tcp(tcp::Config::default()
@@ -105,6 +83,15 @@ pub async fn init_swarm() -> Result<Swarm<chain::Behaviour>, Box<dyn SError>> {
                 .upgrade(Version::V1Lazy)
                 .authenticate(nc)
                 .multiplex(yc)
+        })?
+        .with_other_transport(|k| {
+            tcp::tokio::Transport::new(tcp::Config::default()
+                .port_reuse(false)
+                .nodelay(true)
+            )
+                .upgrade(Version::V1)
+                .authenticate(noise::Config::new(k).unwrap())
+                .multiplex(yamux::Config::default())
         })?
         .with_dns()?
         .with_relay_client(noise::Config::new, yamux::Config::default)?

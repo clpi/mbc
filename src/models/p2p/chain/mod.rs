@@ -32,7 +32,7 @@ use libp2p::{
         self, Transport, Config,
         tokio::{Tcp, TcpStream},
     },
-    swarm::{SwarmEvent, Swarm}, 
+    swarm::{SwarmEvent, Swarm, ToSwarm, ConnectionId}, 
 };
 use tokio::{
     sync::mpsc,
@@ -94,6 +94,12 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
+    pub fn from_key_relay(k: &Keypair, rb: libp2p::relay::Behaviour) -> Self {
+        Self {
+            relay: rb,
+            ..Behaviour::from(k.clone())
+        }
+    }
     fn gs(pk: &PublicKey) -> libp2p::gossipsub::Behaviour {
         let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
@@ -207,6 +213,14 @@ impl Default for Behaviour {
     }
 }
 
+// impl NetworkBehaviour for Chain {
+//     type ConnectionHandler = NotifyHandler<ConnectionId, Connec
+//     type ToSwarm = ToSwarm<Self>;
+//     fn poll(&mut self, cx: &mut std::task::Context<'_>)
+//             -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
+        
+//     }
+// }
 
 // #[derive(NetworkBehaviour)]
 pub struct AppBehavior {
