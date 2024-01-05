@@ -2,7 +2,7 @@ pub struct Server;
 use std::{
     collections::{hash_map::{self, DefaultHasher}, HashMap, HashSet},
     hash::{Hash, Hasher},
-    time::{Duration, Instant}
+    time::{Duration, Instant}, f32::consts::E
 };
 use clap::{Arg, Parser};
 use futures::{prelude::*, channel::oneshot};
@@ -13,7 +13,7 @@ use libp2p::{
     identify,
     identity::{self, Keypair as Keypair},
     core::{upgrade},
-    kad::{self},
+    kad::{self, Mode},
     noise, yamux, 
     futures::StreamExt,
     gossipsub::{self, Event as GSEvent, Topic as GSTopic},
@@ -62,7 +62,7 @@ use super::{init_swarm, chain};
 
 
 pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
-    let (mut learned_observ_addr, mut _told_relay_observ_addr) = (false, false);
+    let (mut learned_observ_addr, mut told_relay_observ_addr) = (false, false);
     loop {
         let mut _delay = futures_timer::Delay::new(
             std::time::Duration::from_secs(1)).fuse();
@@ -108,7 +108,6 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
             },
             SwarmEvent::ListenerError { listener_id, error } => {
                 tracing::warn!("Listener closed: {:?} {:?}", listener_id, error);
-                panic!("{:?}", error);
             },
             SwarmEvent::ConnectionClosed { peer_id, connection_id, endpoint, num_established, cause } => {
                 tracing::info!("Connection {connection_id:?} closed for {peer_id}: {:?} by {cause:?} at {endpoint:?} [rem: {num_established}]", cause);
@@ -146,6 +145,90 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
                     },
                     kad::Event::OutboundQueryProgressed { id, result, stats, step } => {
                         tracing::info!("Outbound query {id:?} progressed: {:?} [{step:?}] [{stats:?}", result);
+                        match result {
+                            kad::QueryResult::GetProviders(prov) => match prov {
+                                Ok(kad::GetProvidersOk::FoundProviders { key, providers }) => {
+                                    for peer in providers {
+                                        tracing::info!(
+                                            "Peer {peer:?} provides key {:?}",
+                                            std::str::from_utf8(key.as_ref()).unwrap()
+                                        );
+                                    }
+                                },
+                                Ok(kad::GetProvidersOk::FinishedWithNoAdditionalRecord { closest_peers }) => {
+                                    tracing::info!("Finished with no additional record: {:?}", closest_peers);
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                            kad::QueryResult::Bootstrap(boot) => match boot {
+                                Ok(b) => {
+                                    tracing::info!("Finished");
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                }
+                            },
+                            kad::QueryResult::GetRecord(rec) => match rec {
+                                Ok(kad::GetRecordOk::FinishedWithNoAdditionalRecord { cache_candidates }) => {
+                                    tracing::info!("Found record: {:?} ", cache_candidates);
+                                },
+                                Ok(kad::GetRecordOk::FoundRecord(
+                                    kad::PeerRecord {  peer, record })
+                                ) => match (peer, record) {
+                                    (Some(p), kad::Record { key, value, publisher, expires  }) => {
+                                        tracing::info!("Found record: {:?} {:?} ", key, value);
+                                    },
+                                    (None, record) => {
+                                        tracing::info!("Found record: {:?} ", record);
+                                    },
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                            kad::QueryResult::GetClosestPeers(closest) => match closest {
+                                Ok(kad::GetClosestPeersOk { peers, key } ) => {
+                                    tracing::info!("Found closest peers: {:?} {:?} ", key, peers);
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                            kad::QueryResult::PutRecord(put) => match put {
+                                kad::PutRecordResult::Ok(r) => {
+                                    tracing::info!("Put record: {:?}", r);
+                                },
+                                kad::PutRecordResult::Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                            kad::QueryResult::StartProviding(prov) => match prov {
+                                Ok(k) => {
+                                    tracing::info!("Start providing: {:?}", k);
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                            kad::QueryResult::RepublishProvider(prov) => match prov {
+                                Ok(k) => {
+                                    tracing::info!("Republish provider: {:?}", k);
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                            kad::QueryResult::RepublishRecord(rec) => match rec {
+                                Ok(k) => {
+                                    tracing::info!("Republish record: {:?}", k);
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error: {:?}", e);
+                                },
+                            },
+                        }
                     },
                     kad::Event::UnroutablePeer { peer } => {
                         tracing::warn!("Unroutable peer: {:?}", peer);
@@ -154,8 +237,43 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
                         tracing::info!("Routable peer: {:?} at {address:?}", peer);
                     },
                 },
-                BehaviourEvent::Ping(libp2p::ping::Event { peer, connection, result }) => {
-                    tracing::info!("Ping result [{connection:?}] from {:?}: {:?}", peer, result);
+                BehaviourEvent::Relay(re) => match re {
+                    libp2p::relay::Event::CircuitClosed { src_peer_id, dst_peer_id, error } => {
+                        tracing::info!("Circuit closed: {:?} {:?} {:?}", src_peer_id, dst_peer_id, error);
+                    },
+                    libp2p::relay::Event::CircuitReqDenied { src_peer_id, dst_peer_id } => {
+                        tracing::info!("Circuit request denied: {:?} {:?}", src_peer_id, dst_peer_id);
+                    },
+                    libp2p::relay::Event::CircuitReqAccepted { src_peer_id, dst_peer_id } => {
+                        tracing::info!("Circuit request accepted: {:?} {:?}", src_peer_id, dst_peer_id);
+                    },
+                    libp2p::relay::Event::ReservationReqDenied { src_peer_id } => {
+                        tracing::info!("Reservation request denied: {:?}", src_peer_id);
+                    },
+                    libp2p::relay::Event::ReservationReqAccepted { src_peer_id, renewed } => {
+                        tracing::info!("Reservation request accepted: {:?}", src_peer_id);
+                    },
+                    libp2p::relay::Event::ReservationTimedOut { src_peer_id } => {
+                        tracing::info!("Reservation timed out: {:?}", src_peer_id);
+                    },
+                    _ => {
+                        tracing::info!("Unhandled relay event");
+                        panic!("Unhandled relay event");
+                    },
+                },
+                BehaviourEvent::Ping(libp2p::ping::Event {peer, connection, result}) => match result {
+                    Ok(r) => {
+                        tracing::info!("Ping result [{connection:?}] from {:?}: {:?}", peer, r);
+                    }
+                    Err(libp2p::ping::Failure::Timeout) => {
+                        tracing::info!("Ping result [{connection:?}] from {:?}: {:?}", peer, libp2p::ping::Failure::Timeout);
+                    }
+                    Err(libp2p::ping::Failure::Unsupported) => {
+                        tracing::info!("Ping result [{connection:?}] from {:?}: {:?}", peer, libp2p::ping::Failure::Unsupported);
+                    }
+                    Err(libp2p::ping::Failure::Other { error }) => {
+                        tracing::info!("Ping result [{connection:?}] from {:?}: {:?}", peer, libp2p::ping::Failure::Other { error });
+                    }
                 },
                 BehaviourEvent::Dcutr(libp2p::dcutr::Event { remote_peer_id, result }) => {
                     tracing::info!("Request from {:?}: {:?}", remote_peer_id, result);
@@ -168,14 +286,66 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
                         tracing::error!("Error from {peer_id:?}: {error:?}");
                         panic!("{:?}", error);
                     },
-                    identify::Event::Pushed { peer_id, info } => {
-                        tracing::info!("Pushed {info:?} to {peer_id:?}");
+                    identify::Event::Pushed { peer_id, info: identify::Info {
+                        observed_addr, 
+                        public_key, 
+                        protocol_version, 
+                        agent_version, 
+                        listen_addrs, 
+                        protocols 
+                    } } => {
+                        for p in protocols {
+                            tracing::info!("Protocol to {p:?}");
+                        }
+                        for a in listen_addrs {
+                            tracing::info!("Sent to {a:?}");
+                        }
+                        tracing::info!("Pushed to {peer_id:?}");
                     },
                     identify::Event::Sent { peer_id } => {
+                        told_relay_observ_addr = true;
                         tracing::info!("Sent to {peer_id:?}");
                     },
-                    identify::Event::Received { info, peer_id } => {
-                        tracing::info!("Received {info:?} from {peer_id:?}");
+                    identify::Event::Received { info: identify::Info { 
+                        observed_addr, 
+                        public_key, 
+                        protocol_version, 
+                        agent_version, 
+                        listen_addrs, 
+                        protocols 
+                    }, peer_id } => {
+                        swarm.add_external_address(observed_addr.clone());
+                        for p in protocols {
+                            tracing::info!("Protocol to {p:?}");
+                        }
+                        for a in listen_addrs {
+                            tracing::info!("Sent to {a:?}");
+                        }
+                        tracing::info!("Received from {peer_id:?}");
+                        tracing::info!(address=%observed_addr, "Relay told us our observed address");
+                        learned_observ_addr = true;
+                    },
+                },
+
+                BehaviourEvent::Rs(rse) => match rse {
+                    libp2p::rendezvous::server::Event::DiscoverNotServed { enquirer, error } => {
+                        tracing::warn!("Discover not served: {:?} {:?}", enquirer, error);
+                    },
+                    libp2p::rendezvous::server::Event::PeerRegistered { peer, registration } => {
+                        tracing::info!("Peer registered: {:?} {:?}", peer, registration);
+                    },
+                    libp2p::rendezvous::server::Event::PeerNotRegistered { peer, namespace, error } => {
+                        tracing::info!("Peer unregistered: {:?} {:?}", peer, error);
+                    },
+                    libp2p::rendezvous::server::Event::RegistrationExpired(reg) => {
+                        tracing::info!("Registration expired: {:?}", reg);
+                    },
+                    libp2p::rendezvous::server::Event::DiscoverServed { enquirer, registrations } => {
+                        tracing::info!("Discover served: {:?} {:?}", enquirer, registrations);
+                    },
+                    _ => {
+                        tracing::info!("Unhandled rendezvous server event");
+                        panic!("Unhandled rendezvous server event");
                     },
                 },
                 BehaviourEvent::Gs(gse) => match gse {
@@ -193,12 +363,43 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
                         tracing::info!("Unsubscribed from {:?} from {:?}", topic, peer_id);
                     },
                 },
+                BehaviourEvent::An(ae) => match ae {
+                    libp2p::autonat::Event::InboundProbe(_probe) => {
+                        tracing::info!("Inbound probe");
+                    },
+                    libp2p::autonat::Event::OutboundProbe(_probe) => {
+                        tracing::info!("Outbound probe");
+                    },
+                    libp2p::autonat::Event::StatusChanged { old, new } => {
+                        tracing::info!("Status changed: {:?} -> {:?}", old, new);
+                    },
+                },
+                BehaviourEvent::Upnp(upe) => match upe {
+                    libp2p::upnp::Event::ExpiredExternalAddr(_addr) => {
+                        tracing::info!("Expired external address");
+                    },
+                    libp2p::upnp::Event::NewExternalAddr(_addr) => {
+                        tracing::info!("New external address");
+                    },
+                    libp2p::upnp::Event::GatewayNotFound => {
+                        tracing::info!("Gateway not found");
+                    },
+                    libp2p::upnp::Event::NonRoutableGateway => {
+                        tracing::info!("Non routable gateway");
+                    },
+                },
                 BehaviourEvent::Mdns(me) => match me {
                     libp2p::mdns::Event::Discovered(list) => {
-                        tracing::info!("Discovered: {:?}", list);
+                        for (peer_id, _multiaddr) in list {
+                            tracing::info!("mDNS discovered a new peer: {peer_id}");
+                            swarm.behaviour_mut().gs.add_explicit_peer(&peer_id);
+                        }
                     },
                     libp2p::mdns::Event::Expired(list) => {
-                        tracing::info!("Expired: {:?}", list);
+                        for (peer_id, _multiaddr) in list {
+                            tracing::info!("mDNS discover peer has expired: {peer_id}");
+                            swarm.behaviour_mut().gs.remove_explicit_peer(&peer_id);
+                        }
                     },
                 },
                 _ => {
@@ -211,7 +412,7 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
                 panic!("Unhandled swarm event");
             }
         }
-        if learned_observ_addr && _told_relay_observ_addr { 
+        if learned_observ_addr && told_relay_observ_addr { 
             tracing::info!("learned_observ_addr & told_relay_observ_addr");
             break; 
         }
@@ -220,6 +421,8 @@ pub async fn listen(mut swarm: libp2p::swarm::Swarm<chain::Behaviour>) {
 }
 pub async fn run() -> anyhow::Result<()> {
     let mut swarm = init_swarm().await.unwrap();
+    swarm.behaviour_mut().kad.set_mode(Some(Mode::Server));
+    swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
     // swarm.dial(opts.relay_addr.clone()?);
     // for peer in &BOOTNODES {

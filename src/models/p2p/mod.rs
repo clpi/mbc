@@ -22,11 +22,11 @@ use libp2p::{
     bytes::{BufMut, Buf,},
     identify,
     identity::{self, Keypair as KeyP, ed25519::Keypair},
-    core::{upgrade},
+    core::{upgrade::{self, Version}},
     kad::{self},
     noise, yamux, 
     futures::StreamExt,
-    gossipsub::{self, Event as GSEvent, Topic as GSTopic},
+    gossipsub::{self, Event as GSEvent, Topic as GSTopic, },
     floodsub::{self, Topic as FSTopic},
     multiaddr::Protocol,
     request_response::{
@@ -34,10 +34,10 @@ use libp2p::{
     },
     // noise::{Keypair, NoiseConfig, X25519Spec},
     tcp::{
-        self, Transport, Config,
+        self, Config,
         tokio::{Tcp, TcpStream},
     },
-    swarm::{SwarmEvent, NetworkBehaviour, Swarm}, floodsub::Floodsub, PeerId, Multiaddr,
+    swarm::{SwarmEvent, NetworkBehaviour, Swarm}, floodsub::Floodsub, PeerId, Multiaddr, Transport,
 };
 use tokio::{
     sync::mpsc,
@@ -86,26 +86,29 @@ pub fn hadle_create_block(cmd: &str) {
     }
 }
 
-pub fn init_tcp_conf() -> libp2p::tcp::Config {
-    libp2p::tcp::Config::default()
-        .port_reuse(true)
-        .nodelay(true)
-}
-
 pub async fn init_swarm() -> Result<Swarm<chain::Behaviour>, Box<dyn SError>> {
     let auth_keys = KeyP::generate_ed25519();
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(auth_keys.clone())
         .with_tokio()
-        .with_tcp(
-            init_tcp_conf(),
-            noise::Config::new,
-            yamux::Config::default,
-        )?
+        .with_tcp(tcp::Config::default()
+                .nodelay(true)
+                .port_reuse(true)
+        , noise::Config::new, yamux::Config::default)?
         .with_quic()
+        .with_other_transport(|k| {
+            let nc = noise::Config::new(k).unwrap();
+            let yc: libp2p::yamux::Config = libp2p::yamux::Config::default();
+            let tc = tcp::Config::default()
+                .port_reuse(false)
+                .nodelay(true);
+            tcp::tokio::Transport::new(tc)
+                .upgrade(Version::V1Lazy)
+                .authenticate(nc)
+                .multiplex(yc)
+        })?
         .with_dns()?
-        .with_behaviour(|k|
-            chain::Behaviour::default()
-        )?
+        .with_relay_client(noise::Config::new, yamux::Config::default)?
+        .with_behaviour(|k, relay_behaviour| chain::Behaviour::from(k.clone()))?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(5)))
         .build();
     swarm.behaviour_mut()

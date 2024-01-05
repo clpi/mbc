@@ -14,9 +14,8 @@ fn init_log() -> () {
         .with_env_filter(EnvFilter::from_default_env())
         .with_line_number(true)
         .compact()
-        // .pretty()
         .with_ansi(true)
-        .with_max_level(LevelFilter::DEBUG)
+        .with_max_level(LevelFilter::INFO)
         .try_init()
         .unwrap_or_else(|e| {
             eprintln!("Failed to init log: {:?}", e);
@@ -33,6 +32,30 @@ pub async fn init() -> anyhow::Result<()> {
     init_log();
     let opts = init_opts().unwrap();
     match opts.command {
+        Some(Subcommand::Run {..}) => {
+            tracing::info!("Run");
+        },
+        Some(Subcommand::Add {..}) => {
+            tracing::info!("Add");
+        },
+        Some(Subcommand::List {..}) => {
+            tracing::info!("List");
+        },
+        Some(Subcommand::Topics {..}) => {
+            tracing::info!("Topics");
+        },
+        Some(Subcommand::Provide { path, name }) => {
+            tracing::info!("Provide: {:?} {:?}", path, name);
+        },
+        Some(Subcommand::Get { name }) => {
+            tracing::info!("Get: {:?}", name);
+        },
+        Some(Subcommand::Config {..}) => {
+            tracing::info!("Config");
+        },
+        Some(Subcommand::Completions { shell }) => {
+            tracing::info!("Completions: {:?}", shell);
+        },
         Some(Subcommand::Peers { peer_id }) => {
             let peers = models::p2p::get_list_peers();
             tracing::info!("Peers: {:?}", peers);

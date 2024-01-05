@@ -4,17 +4,35 @@ use self::{
     cmd::Subcmd,
 };
 
-use std::str::FromStr;
+use std::{str::FromStr, path::PathBuf};
 
 use clap::Parser;
 use libp2p::{Multiaddr, PeerId};
 
-#[derive(Debug, Parser)]
-#[clap(name = "mbc")]
+#[derive(Debug, Clone, Parser)]
+#[clap(
+    name = "mbc",
+    about = "A simple command line tool for interacting with the mbc network",
+    version = "0.1.0",
+    propagate_version = true,
+    disable_help_subcommand = false,
+)]
 pub struct Opts {
     /// The mode (client-listen, client-dial)
     #[clap(long)]
     pub mode: Option<Mode>,
+
+    /// Output JSON
+    #[clap(long, short, global = true)]
+    pub json: bool,
+
+    /// Set verbosity
+    #[clap(short, global = true, action = clap::ArgAction::Count)]
+    pub verbosity: u8,
+
+    /// Peer ID of the remote peer to hole punch to
+    #[clap(long)]
+    peer: Option<Multiaddr>,
 
     /// Fixed val to gen deterministic peer id
     #[clap(long)]
@@ -23,10 +41,6 @@ pub struct Opts {
     /// Listening addr
     #[clap(long)]
     pub relay_addr: Option<Multiaddr>,
-
-    /// Peer ID of the remote peer to hole punch to
-    #[clap(long)]
-    pub remote_peer_id: Option<PeerId>,
 
     /// Have relay listen on ipv6 or ipv4 (default) loopback address
     #[clap(long)]
@@ -41,8 +55,36 @@ pub struct Opts {
     pub command: Option<Subcommand>,
 }
 
-#[derive(Parser,Debug)]
+#[derive(clap::Subcommand, Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Subcommand {
+    #[clap(arg_required_else_help = false)]
+    Run {
+
+    },
+    #[clap(subcommand, arg_required_else_help = true)]
+    Topics(AddCmd),
+    #[clap(subcommand, arg_required_else_help = true)]
+    Add(AddCmd),
+    #[clap(subcommand, arg_required_else_help = true)]
+    List(ListCmd),
+    #[clap(subcommand, arg_required_else_help = true)]
+    Config(ConfigCmd),
+    /// Generate completions
+    Completions {
+        shell: clap_complete::Shell,
+    },
+    Provide {
+        #[clap(long)]
+        path: PathBuf,
+
+        #[clap(long)]
+        name: String,
+    },
+    Get {
+        #[clap(long)]
+        name: String
+    },
     Peers {
         #[clap(long)]
         peer_id: Option<PeerId>,
@@ -54,6 +96,32 @@ pub enum Subcommand {
 pub enum Mode {
     Dial,
     Listen,
+}
+#[derive(Clone, Debug, PartialEq, Parser)]
+pub enum AddCmd {
+    Artist,
+    Album,
+    Listen,
+    Event,
+    Song,
+}
+#[derive(Clone, Debug, PartialEq, Parser)]
+pub enum ConfigCmd {
+    Artist,
+    Album,
+    Listen,
+    Event,
+    Song,
+
+}
+#[derive(Clone, Debug, PartialEq, Parser)]
+pub enum ListCmd {
+    Artist,
+    Album,
+    Listen,
+    Event,
+    Song,
+
 }
 
 impl FromStr for Mode {

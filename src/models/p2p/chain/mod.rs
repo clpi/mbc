@@ -14,8 +14,9 @@ use anyhow::{Result as AResult, bail};
 use futures::{executor::block_on, FutureExt};
 use libp2p::{
     bytes::{BufMut, Buf,},
+    pnet::{PnetConfig, PreSharedKey},
     identify,
-    identity::{self, Keypair as Keypair},
+    identity::{self, Keypair as Keypair, PublicKey},
     core::{upgrade},
     kad::{self},
     noise, yamux, 
@@ -75,10 +76,14 @@ pub struct Behaviour {
     pub kad: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
     pub ping: libp2p::ping::Behaviour,
     pub identify: libp2p::identify::Behaviour,
+    pub relay: libp2p::relay::Behaviour,
+    pub rs: libp2p::rendezvous::server::Behaviour,
     pub gs: libp2p::gossipsub::Behaviour,
     pub dcutr: libp2p::dcutr::Behaviour,
     pub fs: libp2p::floodsub::Floodsub,
     pub mdns: libp2p::mdns::tokio::Behaviour,
+    pub an: libp2p::autonat::Behaviour,
+    pub upnp: libp2p::upnp::tokio::Behaviour,
     // #[behaviour(ignore)]
     // pub resp_sender: mpsc::UnboundedSender<ChainResponse>,
     // #[behaviour(ignore)]
@@ -89,7 +94,7 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
-    fn gs() -> libp2p::gossipsub::Behaviour {
+    fn gs(pk: &PublicKey) -> libp2p::gossipsub::Behaviour {
         let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
             message.data.hash(&mut s);
@@ -97,6 +102,7 @@ impl Behaviour {
         };
         let gossipsub_config = gossipsub::ConfigBuilder::default()
             .heartbeat_interval(Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
+            .max_transmit_size(262144)
             .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
             .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
             .build()
@@ -108,28 +114,28 @@ impl Behaviour {
         ).unwrap()
     }
 
-    fn kad() -> libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore> {
+    fn kad(k: &PeerId) -> libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore> {
         let mut cfg = libp2p::kad::Config::default();
         cfg.set_query_timeout(Duration::from_secs(5 * 60));
-        let store = libp2p::kad::store::MemoryStore::new(PEER_ID.clone(),);
+        let store = libp2p::kad::store::MemoryStore::new(k.clone(),);
         libp2p::kad::Behaviour::new(
-            PEER_ID.clone(),
+            k.clone(),
             store,
         )
     }
 
-    fn mdns() -> libp2p::mdns::tokio::Behaviour {
+    fn mdns(k: &PeerId) -> libp2p::mdns::tokio::Behaviour {
         libp2p::mdns::tokio::Behaviour::new(
             libp2p::mdns::Config::default(),
-            PEER_ID.clone(),
+            k.clone(),
         ).unwrap()
     }
 
-    fn ping() -> libp2p::ping::Behaviour {
+    fn ping(k: &PeerId) -> libp2p::ping::Behaviour {
         libp2p::ping::Behaviour::new(libp2p::ping::Config::new())
     }
 
-    fn req_resp() -> request_response::cbor::Behaviour<LocalChainReq, ChainResponse> {
+    fn req_resp(k: &PeerId) -> request_response::cbor::Behaviour<LocalChainReq, ChainResponse> {
         request_response::cbor::Behaviour::<LocalChainReq, ChainResponse>::new(
             [
                 (StreamProtocol::new("/chain/client/1"), ProtocolSupport::Outbound),
@@ -140,36 +146,68 @@ impl Behaviour {
         )
     }
 
-    fn dcutr() -> libp2p::dcutr::Behaviour {
-        libp2p::dcutr::Behaviour::new(PEER_ID.clone())
+    fn dcutr(k: &PeerId) -> libp2p::dcutr::Behaviour {
+        libp2p::dcutr::Behaviour::new(k.clone())
     }
 
-    fn fs() -> libp2p::floodsub::Floodsub {
-        libp2p::floodsub::Floodsub::new(PEER_ID.clone())
+    fn fs(k: &PeerId) -> libp2p::floodsub::Floodsub {
+        libp2p::floodsub::Floodsub::new(k.clone())
     }
 
-    fn identify() -> libp2p::identify::Behaviour {
+    fn identify(pk: &identity::PublicKey) -> libp2p::identify::Behaviour {
         libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
             "/TODO/0.0.1".to_string(),
-            KEYS.public(),
+            pk.clone(),
         ))
+    }
+    fn upnp(pk: &PeerId) -> libp2p::upnp::tokio::Behaviour {
+        libp2p::upnp::tokio::Behaviour::default()
+    }
+    fn an(k: &PeerId) -> libp2p::autonat::Behaviour {
+        libp2p::autonat::Behaviour::new(
+            k.clone(),
+            libp2p::autonat::Config::default(),
+        )
+    }
+    fn rs(k: &PeerId) -> libp2p::rendezvous::server::Behaviour {
+        libp2p::rendezvous::server::Behaviour::new(
+            libp2p::rendezvous::server::Config::default(),
+        )
+    }
+    pub fn relay(k: &PeerId) -> libp2p::relay::Behaviour {
+        libp2p::relay::Behaviour::new(
+            k.clone(),
+            libp2p::relay::Config::default(),
+        )
     }
 
 }
-impl Default for Behaviour {
-    fn default() -> Self {
-        Behaviour {
-            gs: Self::gs(),
-            fs: Self::fs(),
-            kad: Self::kad(),
-            mdns: Self::mdns(),
-            dcutr: Self::dcutr(),
-            ping: Self::ping(),
-            identify: Self::identify(),
-            req_resp: Self::req_resp(),
+impl From<Keypair> for Behaviour {
+    fn from(kp:  Keypair)  -> Self {
+        let pk = kp.public();
+        Self {
+            gs: Self::gs(&pk),
+            fs: Self::fs(&pk.to_peer_id()),
+            relay: Self::relay(&pk.to_peer_id()),
+            kad: Self::kad(&pk.to_peer_id()),
+            mdns: Self::mdns(&pk.to_peer_id()),
+            dcutr: Self::dcutr(&pk.to_peer_id()),
+            ping: Self::ping(&pk.to_peer_id()),
+            identify: Self::identify(&pk),
+            upnp: Self::upnp(&pk.to_peer_id()),
+            an: Self::an(&pk.to_peer_id()),
+            rs: Self::rs(&pk.to_peer_id()),
+            req_resp: Self::req_resp(&pk.to_peer_id()),
         }
     }
 }
+impl Default for Behaviour {
+    fn default() -> Self {
+        Self::from(KEYS.clone())
+    }
+}
+
+
 // #[derive(NetworkBehaviour)]
 pub struct AppBehavior {
     pub floodsub: Floodsub,
@@ -196,5 +234,14 @@ impl AppBehavior {
         beh.floodsub.subscribe(CHAIN_TOPIC.clone());
         beh.floodsub.subscribe(BLOCK_TOPIC.clone());
         beh
+    }
+}
+
+async fn get_psk(path: &std::path::Path) -> tokio::io::Result<Option<String>> {
+    let swarm_key_file = path.join("swarm.key");
+    match tokio::fs::read_to_string(swarm_key_file).await {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
     }
 }
