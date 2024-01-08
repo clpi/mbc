@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use libp2p::PeerId;
 
 #[derive(clap::Subcommand, Clone, Debug)]

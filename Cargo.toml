@@ -1,9 +1,12 @@
 [workspace]
+resolver = "2"
 members = [
     "./crates/mbc-core",
     "./crates/mbc-macro",
     "./crates/mbc-data",
+    "./crates/mbc-cli",
 ]
+
 [package]
 name = "mbc"
 version = "0.1.0"

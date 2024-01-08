@@ -6,6 +6,8 @@ use self::{
     cmd::Cmd,
 };
 
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 use std::{str::FromStr, path::PathBuf};
 
 use clap::Parser;
@@ -14,8 +16,10 @@ use libp2p::{Multiaddr, PeerId};
 #[derive(Debug, Clone, Parser)]
 #[clap(
     name = "mbc",
-    about = "A simple command line tool for interacting with the mbc network",
-    version = "0.1.0",
+    author,
+    version,
+    about,
+    long_about = None,
     propagate_version = true,
     disable_help_subcommand = false,
 )]
@@ -72,8 +76,22 @@ impl FromStr for Mode {
         }
     }
 }
+fn init_log() -> () {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_line_number(true)
+        .compact()
+        .with_ansi(true)
+        .with_max_level(LevelFilter::INFO)
+        .try_init()
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to init log: {:?}", e);
+        })
+}
+
 impl Opts {
     pub async fn run(&self) -> anyhow::Result<()> {
+        init_log();
         match self.command {
             Some(ref cmd) => cmd.run().await,
             None => {
