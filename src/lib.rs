@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 use clap::{Parser};
-use cli::Subcommand;
+use cli::{cmd::{Cmd, self}, Opts};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -22,51 +22,8 @@ fn init_log() -> () {
         })
 }
 
-fn init_opts() -> anyhow::Result<cli::Opts> {
-    let opts = cli::Opts::parse();
-    Ok(opts)
-}
-
 
 pub async fn init() -> anyhow::Result<()> {
     init_log();
-    let opts = init_opts().unwrap();
-    match opts.command {
-        Some(Subcommand::Run {..}) => {
-            tracing::info!("Run");
-        },
-        Some(Subcommand::Add {..}) => {
-            tracing::info!("Add");
-        },
-        Some(Subcommand::List {..}) => {
-            tracing::info!("List");
-        },
-        Some(Subcommand::Topics {..}) => {
-            tracing::info!("Topics");
-        },
-        Some(Subcommand::Provide { path, name }) => {
-            tracing::info!("Provide: {:?} {:?}", path, name);
-        },
-        Some(Subcommand::Get { name }) => {
-            tracing::info!("Get: {:?}", name);
-        },
-        Some(Subcommand::Config {..}) => {
-            tracing::info!("Config");
-        },
-        Some(Subcommand::Completions { shell }) => {
-            tracing::info!("Completions: {:?}", shell);
-        },
-        Some(Subcommand::Peers { peer_id }) => {
-            let peers = models::p2p::get_list_peers();
-            tracing::info!("Peers: {:?}", peers);
-        },
-        Some(Subcommand::PutPkRecord { .. }) => {
-            let chain = models::p2p::get_chain();
-            tracing::info!("Chain: {:?}", chain);
-        },
-        None => {
-            tracing::info!("No subcommand");
-        }
-    }
-    models::p2p::server::run().await
+    Opts::parse().run().await
 }

@@ -1,7 +1,9 @@
 pub mod cmd;
 
+use crate::models;
+
 use self::{
-    cmd::Subcmd,
+    cmd::Cmd,
 };
 
 use std::{str::FromStr, path::PathBuf};
@@ -52,44 +54,7 @@ pub struct Opts {
 
     /// Subcommand
     #[clap(subcommand)]
-    pub command: Option<Subcommand>,
-}
-
-#[derive(clap::Subcommand, Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum Subcommand {
-    #[clap(arg_required_else_help = false)]
-    Run {
-
-    },
-    #[clap(subcommand, arg_required_else_help = true)]
-    Topics(AddCmd),
-    #[clap(subcommand, arg_required_else_help = true)]
-    Add(AddCmd),
-    #[clap(subcommand, arg_required_else_help = true)]
-    List(ListCmd),
-    #[clap(subcommand, arg_required_else_help = true)]
-    Config(ConfigCmd),
-    /// Generate completions
-    Completions {
-        shell: clap_complete::Shell,
-    },
-    Provide {
-        #[clap(long)]
-        path: PathBuf,
-
-        #[clap(long)]
-        name: String,
-    },
-    Get {
-        #[clap(long)]
-        name: String
-    },
-    Peers {
-        #[clap(long)]
-        peer_id: Option<PeerId>,
-    },
-    PutPkRecord {},
+    pub command: Option<cmd::Cmd>,
 }
 
 #[derive(Clone, Debug, PartialEq, Parser)]
@@ -97,33 +62,6 @@ pub enum Mode {
     Dial,
     Listen,
 }
-#[derive(Clone, Debug, PartialEq, Parser)]
-pub enum AddCmd {
-    Artist,
-    Album,
-    Listen,
-    Event,
-    Song,
-}
-#[derive(Clone, Debug, PartialEq, Parser)]
-pub enum ConfigCmd {
-    Artist,
-    Album,
-    Listen,
-    Event,
-    Song,
-
-}
-#[derive(Clone, Debug, PartialEq, Parser)]
-pub enum ListCmd {
-    Artist,
-    Album,
-    Listen,
-    Event,
-    Song,
-
-}
-
 impl FromStr for Mode {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -131,6 +69,27 @@ impl FromStr for Mode {
             "d" | "dial" => Ok(Mode::Dial),
             "l" | "listen" => Ok(Mode::Listen),
             _ => Err("Expected either dial or listen".to_string())
+        }
+    }
+}
+impl Opts {
+    pub async fn run(&self) -> anyhow::Result<()> {
+        match self.command {
+            Some(ref cmd) => cmd.run().await,
+            None => {
+                match self.mode {
+                    Some(Mode::Dial) => {
+                        return models::run().await;
+                    },
+                    Some(Mode::Listen) => {
+                        return models::run().await;
+                    },
+                    None => {
+                        println!("No mode specified");
+                        return models::run().await;
+                    }
+                }
+            }
         }
     }
 }

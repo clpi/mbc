@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    "./crates/mbc-core",
+    "./crates/mbc-macro",
+    "./crates/mbc-data",
+]
 [package]
 name = "mbc"
 version = "0.1.0"

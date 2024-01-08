@@ -2178,6 +2178,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mbc-core"
+version = "0.1.0"
+
+[[package]]
+name = "mbc-data"
+version = "0.1.0"
+
+[[package]]
+name = "mbc-macro"
+version = "0.1.0"
+
+[[package]]
 name = "memchr"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
